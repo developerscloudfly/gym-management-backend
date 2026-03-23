@@ -8,6 +8,7 @@ import {
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  changePasswordSchema,
 } from './auth.validation';
 
 const router = Router();
@@ -20,6 +21,7 @@ router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), aut
 router.post('/reset-password', validate(resetPasswordSchema), authController.resetPassword);
 
 // Protected routes
+router.post('/change-password', authenticate, validate(changePasswordSchema), authController.changePassword);
 router.post('/logout', authenticate, authController.logout);
 router.get('/me', authenticate, authController.getMe);
 

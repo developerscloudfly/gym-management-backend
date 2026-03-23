@@ -8,6 +8,7 @@ import swaggerUi from 'swagger-ui-express';
 import { corsOptions } from './config/cors';
 import { apiLimiter } from './middleware/rateLimiter.middleware';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
+import { requirePasswordChanged } from './middleware/auth.middleware';
 import { env } from './config/env';
 import { swaggerSpec } from './config/swagger';
 
@@ -60,6 +61,11 @@ if (env.NODE_ENV !== 'production') {
 
 // ─── API Routes ──────────────────────────────────────────────────────────────
 app.use('/api/v1/auth', authRoutes);
+
+// ─── Force Password Change ──────────────────────────────────────────────────
+// All routes below require the user to have changed their temporary password
+app.use(requirePasswordChanged);
+
 app.use('/api/v1/gyms', gymRoutes);
 app.use('/api/v1/gyms/:gymId/members', memberRoutes);
 app.use('/api/v1/gyms/:gymId', trainerRoutes);

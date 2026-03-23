@@ -5,9 +5,14 @@ import { p } from '../../utils/param';
 import * as gymService from './gym.service';
 
 export const createGym = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const gym = await gymService.createGym(req.body, req.user!._id, req.user!._id);
+  const { gym, owner } = await gymService.createGym(req.body, req.user!._id);
 
-  sendResponse({ res, statusCode: 201, message: 'Gym created successfully', data: gym });
+  sendResponse({
+    res,
+    statusCode: 201,
+    message: 'Gym and admin created successfully',
+    data: { gym, owner: { _id: owner._id, firstName: owner.firstName, lastName: owner.lastName, email: owner.email } },
+  });
 });
 
 export const getAllGyms = asyncHandler(async (req: Request, res: Response): Promise<void> => {

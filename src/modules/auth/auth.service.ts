@@ -41,7 +41,6 @@ export const registerUser = async (
 
   const user = await User.create({
     ...data,
-    gymId: data.gymId ? new mongoose.Types.ObjectId(data.gymId) : null,
     createdBy: actorId,
     updatedBy: actorId,
   });
@@ -89,6 +88,23 @@ export const loginUser = async (data: LoginInput): Promise<AuthResult> => {
   await user.save();
 
   return { user: sanitizeUser(user) as Omit<IUser, 'password' | 'refreshToken'>, tokens: { accessToken, refreshToken } };
+};
+
+export const changePassword = async (
+  userId: string,
+  currentPassword: string,
+  newPassword: string
+): Promise<void> => {
+  const user = await User.findById(userId).select('+password');
+  if (!user) throw ApiError.notFound('User not found');
+
+  const isMatch = await user.comparePassword(currentPassword);
+  if (!isMatch) throw ApiError.unauthorized('Current password is incorrect');
+
+  user.password = newPassword;
+  user.mustChangePassword = false;
+  user.updatedBy = user._id;
+  await user.save();
 };
 
 export const refreshTokens = async (token: string): Promise<AuthTokens> => {

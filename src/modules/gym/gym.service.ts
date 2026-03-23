@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { Gym, IGym } from './gym.model';
 import { User } from '../user/user.model';
@@ -5,26 +6,63 @@ import { ApiError } from '../../utils/apiError';
 import { getPaginationOptions, buildPaginationMeta } from '../../utils/pagination';
 import { Request } from 'express';
 import { CreateGymInput, UpdateGymInput } from './gym.validation';
+import { sendGymAdminInviteEmail } from '../../services/email.service';
+
+const generateTempPassword = (): string => {
+  // 12-char password: random base64 + ensure it meets validation rules
+  const random = crypto.randomBytes(6).toString('base64').slice(0, 10);
+  return `T${random}1a`; // Guarantees uppercase (T), lowercase (a), number (1)
+};
 
 export const createGym = async (
   data: CreateGymInput,
-  ownerId: mongoose.Types.ObjectId,
   actorId: mongoose.Types.ObjectId
-): Promise<IGym> => {
-  const gym = await Gym.create({
-    ...data,
-    ownerId,
+): Promise<{ gym: IGym; owner: InstanceType<typeof User> }> => {
+  const { owner: ownerData, ...gymData } = data;
+
+  // Check if admin email is already taken
+  const existing = await User.findOne({ email: ownerData.email });
+  if (existing) {
+    throw ApiError.conflict('Owner email is already registered');
+  }
+
+  // Auto-generate temporary password
+  const tempPassword = generateTempPassword();
+
+  // Create gym admin user with temp password
+  const owner = await User.create({
+    firstName: ownerData.firstName,
+    lastName: ownerData.lastName,
+    email: ownerData.email,
+    phone: ownerData.phone || undefined,
+    password: tempPassword,
+    role: 'gym_admin',
+    mustChangePassword: true,
     createdBy: actorId,
     updatedBy: actorId,
   });
 
-  // Update the owner's gymId
-  await User.findByIdAndUpdate(ownerId, {
-    gymId: gym._id,
+  // Create gym linked to the new admin
+  const gym = await Gym.create({
+    ...gymData,
+    ownerId: owner._id,
+    createdBy: actorId,
     updatedBy: actorId,
   });
 
-  return gym;
+  // Link admin back to the gym
+  owner.gymId = gym._id as mongoose.Types.ObjectId;
+  await owner.save();
+
+  // Send invite email with credentials (fire-and-forget)
+  sendGymAdminInviteEmail(
+    owner.email,
+    `${owner.firstName} ${owner.lastName}`,
+    gymData.name,
+    tempPassword
+  ).catch(() => undefined);
+
+  return { gym, owner };
 };
 
 export const getAllGyms = async (req: Request) => {

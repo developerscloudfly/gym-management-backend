@@ -24,6 +24,17 @@ export const createGymSchema = z.object({
   email: z.string().email('Invalid email'),
   website: z.string().url().optional().or(z.literal('')),
   settings: settingsSchema.optional(),
+  // Gym admin details — superadmin provides these; password is auto-generated
+  owner: z.object({
+    firstName: z.string().min(1, 'First name is required').max(50),
+    lastName: z.string().min(1, 'Last name is required').max(50),
+    email: z.string().email('Invalid email').toLowerCase(),
+    phone: z
+      .string()
+      .regex(/^\+[1-9]\d{6,14}$/, 'Phone must include country code e.g. +91XXXXXXXXXX')
+      .optional()
+      .or(z.literal('')),
+  }),
 });
 
 export const updateGymSchema = createGymSchema.partial();

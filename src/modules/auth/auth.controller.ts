@@ -34,10 +34,13 @@ export const login = asyncHandler(async (req: Request, res: Response): Promise<v
 
   sendResponse({
     res,
-    message: 'Login successful',
+    message: result.user.mustChangePassword
+      ? 'Login successful — password change required'
+      : 'Login successful',
     data: {
       user: result.user,
       accessToken: result.tokens.accessToken,
+      mustChangePassword: result.user.mustChangePassword,
     },
   });
 });
@@ -93,6 +96,13 @@ export const resetPassword = asyncHandler(
     sendResponse({ res, message: 'Password reset successful. Please login again.' });
   }
 );
+
+export const changePassword = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const { currentPassword, newPassword } = req.body;
+  await authService.changePassword(req.user!._id.toString(), currentPassword, newPassword);
+
+  sendResponse({ res, message: 'Password changed successfully' });
+});
 
 export const getMe = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const user = await authService.getMe(req.user!._id.toString());

@@ -30,3 +30,26 @@ export const authenticate = asyncHandler(
     next();
   }
 );
+
+/**
+ * Blocks access if user has a temporary password that must be changed.
+ * Allow-listed paths (change-password, logout) are exempt.
+ */
+export const requirePasswordChanged = (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): void => {
+  // Skip if not authenticated yet (public routes)
+  if (!req.user) return next();
+
+  // Always allow these endpoints
+  const exempt = ['/api/v1/auth/change-password', '/api/v1/auth/logout', '/api/v1/auth/me'];
+  if (exempt.includes(req.path)) return next();
+
+  if (req.user.mustChangePassword) {
+    throw ApiError.forbidden('You must change your temporary password before accessing the platform');
+  }
+
+  next();
+};

@@ -70,6 +70,20 @@ const subscriptionReminderHtml = (name: string, expiryDate: string): string => `
   <p>Please renew it to continue enjoying uninterrupted access.</p>
 `;
 
+const gymAdminInviteHtml = (name: string, gymName: string, email: string, tempPassword: string, loginUrl: string): string => `
+  <h2>Welcome to GymApp, ${name}!</h2>
+  <p>You have been appointed as the admin for <strong>${gymName}</strong>.</p>
+  <p>Here are your login credentials:</p>
+  <table style="border-collapse:collapse;width:100%;max-width:400px;">
+    <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Email</td><td style="padding:8px;border:1px solid #ddd;">${email}</td></tr>
+    <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Temporary Password</td><td style="padding:8px;border:1px solid #ddd;font-family:monospace;font-size:16px;">${tempPassword}</td></tr>
+  </table>
+  <br/>
+  <a href="${loginUrl}" style="display:inline-block;padding:12px 24px;background:#4F46E5;color:#fff;text-decoration:none;border-radius:6px;">Login Now</a>
+  <p style="color:#e53e3e;font-weight:bold;">⚠ You will be required to change your password on first login.</p>
+  <p>If you did not expect this email, please contact support.</p>
+`;
+
 // ─── Public Helpers ───────────────────────────────────────────────────────────
 
 export const sendWelcomeEmail = async (to: string, name: string): Promise<void> => {
@@ -90,6 +104,20 @@ export const sendPaymentReceiptEmail = async (payment: IPayment): Promise<void> 
   const member = populated.memberId as unknown as { name: string; email: string };
   if (!member?.email) return;
   await sendEmail(member.email, `Payment Receipt — ${payment.invoiceNumber}`, paymentReceiptHtml(payment));
+};
+
+export const sendGymAdminInviteEmail = async (
+  to: string,
+  name: string,
+  gymName: string,
+  tempPassword: string
+): Promise<void> => {
+  const loginUrl = `${env.CLIENT_URL}/login`;
+  await sendEmail(
+    to,
+    `You're now the admin of ${gymName} — GymApp`,
+    gymAdminInviteHtml(name, gymName, to, tempPassword, loginUrl)
+  );
 };
 
 export const sendSubscriptionReminderEmail = async (

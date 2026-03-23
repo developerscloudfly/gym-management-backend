@@ -19,6 +19,7 @@ export interface IUser extends Document {
   refreshToken?: string | null;
   passwordResetToken?: string | null;
   passwordResetExpiry?: Date | null;
+  mustChangePassword: boolean;
   lastLogin?: Date | null;
   fcmToken?: string | null;
   // Audit fields (added by global plugin)
@@ -103,6 +104,10 @@ const userSchema = new Schema<IUser>(
       type: Date,
       select: false,
       default: null,
+    },
+    mustChangePassword: {
+      type: Boolean,
+      default: false,
     },
     lastLogin: {
       type: Date,
