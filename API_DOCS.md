@@ -479,6 +479,30 @@ Add a body measurement snapshot.
 ---
 
 ### GET `/gyms/:gymId/trainers` 🔒 `gym_admin`
+**Query Params:** `page`, `limit`, `search`
+
+---
+
+### GET `/gyms/:gymId/trainers/:id` 🔒 `gym_admin`
+Returns a single trainer by ID.
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "message": "Trainer fetched",
+  "data": {
+    "_id": "64abc...",
+    "firstName": "Mike",
+    "lastName": "Johnson",
+    "email": "mike@fitzone.com",
+    "phone": "+911234567890",
+    "role": "trainer",
+    "gymId": "64def...",
+    "isActive": true
+  }
+}
+```
 
 ---
 
@@ -496,10 +520,17 @@ Soft-deactivates trainer.
 
 Same CRUD as Trainers, same role restrictions.
 
-- `POST /gyms/:gymId/staff`
-- `GET /gyms/:gymId/staff`
-- `PUT /gyms/:gymId/staff/:id`
-- `DELETE /gyms/:gymId/staff/:id`
+### POST `/gyms/:gymId/staff` 🔒 `gym_admin`
+
+### GET `/gyms/:gymId/staff` 🔒 `gym_admin`
+**Query Params:** `page`, `limit`, `search`
+
+### GET `/gyms/:gymId/staff/:id` 🔒 `gym_admin`
+Returns a single staff member by ID. Same response shape as GET single trainer.
+
+### PUT `/gyms/:gymId/staff/:id` 🔒 `gym_admin`
+
+### DELETE `/gyms/:gymId/staff/:id` 🔒 `gym_admin`
 
 ---
 
@@ -1081,45 +1112,293 @@ AI-generated insights about the logged-in member's own progress.
 
 ## Analytics
 
-### GET `/gyms/:gymId/analytics/dashboard` 🔒 `gym_admin`
-Returns all key gym metrics in one call.
+### GET `/analytics/super-admin/dashboard` 🔒 `super_admin`
+Platform-wide dashboard with KPIs, gym-level insights, revenue, and activity feed.
 
 **Response:**
 ```json
 {
   "data": {
-    "totalMembers": 120,
-    "activeMembers": 98,
-    "newMembersThisMonth": 12,
-    "monthlyRevenue": 245000,
-    "activeClasses": 8,
-    "avgAttendancePerDay": 35,
-    "churnRate": 4.2
+    "kpis": {
+      "totalGyms": 48,
+      "activeGyms": 45,
+      "totalMembers": 12450,
+      "mrr": 125000.00,
+      "churnRate": 3.2,
+      "aiUsageCount": 0
+    },
+    "expiringSubscriptions": [
+      { "gymId": "...", "gymName": "FitZone", "label": "5 member subscriptions expiring within 7 days", "severity": "medium", "value": "5" }
+    ],
+    "failedPayments": [
+      { "gymId": "...", "gymName": "PowerHouse", "label": "₹25000 failed", "severity": "high", "value": "25000" }
+    ],
+    "highChurnGyms": [
+      { "gymId": "...", "gymName": "EasyFit", "label": "12.5% churn rate", "severity": "high", "value": "12.5" }
+    ],
+    "rapidGrowthGyms": [
+      { "gymId": "...", "gymName": "FitZone", "label": "+32 new members this month", "severity": "low", "value": "32" }
+    ],
+    "recentActivity": [
+      { "id": "...", "type": "gym_registered", "description": "New gym 'FitZone' registered", "timestamp": "2026-03-26T09:30:00.000Z", "gymName": "FitZone", "amount": null },
+      { "id": "...", "type": "payment_received", "description": "Subscription payment received from PowerHouse", "timestamp": "2026-03-26T08:00:00.000Z", "gymName": "PowerHouse", "amount": 15000 }
+    ],
+    "revenueByGym": [
+      { "gymId": "...", "gymName": "FitZone", "revenue": 48500, "memberCount": 320, "growth": 0 }
+    ],
+    "monthlyRevenue": [
+      { "month": "Jan 2026", "revenue": 98000, "gyms": 45 }
+    ],
+    "paymentStats": { "successful": 1240, "failed": 38, "pending": 15, "successRate": 96.9 },
+    "aiInsights": [],
+    "systemStats": { "apiResponseTime": 0, "activeUsers": 0, "errorRate": 0, "uptime": 99.9 }
+  }
+}
+```
+
+`recentActivity.type` values: `gym_registered` | `subscription_renewal` | `payment_received` | `gym_deactivated`
+
+> **Backward compatible alias:** `GET /analytics/platform` still works (returns legacy shape).
+
+---
+
+### GET `/gyms/:gymId/analytics/gym-admin-dashboard` 🔒 `gym_admin | super_admin`
+Full gym dashboard — KPIs, action items, today's activity, revenue stats, classes, and trainer stats.
+
+**Response:**
+```json
+{
+  "data": {
+    "kpis": {
+      "activeMembers": 320,
+      "todayCheckIns": 45,
+      "dailyRevenue": 8500,
+      "monthlyRevenue": 185000,
+      "activeSubscriptions": 298,
+      "classesToday": 8
+    },
+    "expiringMemberships": [
+      { "memberId": "...", "memberName": "Jane Smith", "label": "Expires in 2 days", "severity": "high", "value": "2026-03-28", "phone": "+91..." }
+    ],
+    "failedPayments": [
+      { "memberId": "...", "memberName": "Bob Wilson", "label": "₹2500 payment failed", "severity": "high", "value": "2500", "phone": "+91..." }
+    ],
+    "inactiveMembers": [
+      { "memberId": "...", "memberName": "Alice Johnson", "label": "No check-in for 14+ days", "severity": "medium", "value": "14", "phone": "+91..." }
+    ],
+    "overloadedTrainers": [
+      { "trainerId": "...", "trainerName": "Alex Brown", "label": "16/15 members (over capacity)", "severity": "high", "value": "16" }
+    ],
+    "todayActivity": [
+      { "id": "...", "type": "check_in", "description": "Jane Smith checked in", "timestamp": "...", "memberName": "Jane Smith", "amount": null },
+      { "id": "...", "type": "payment_received", "description": "Monthly fee paid by Bob Wilson", "timestamp": "...", "memberName": "Bob Wilson", "amount": 2500 }
+    ],
+    "memberInsights": [
+      { "memberId": "...", "memberName": "Alice Johnson", "type": "churn_risk", "insight": "No gym visit in 14+ days. High churn probability.", "severity": "high", "actionRequired": true }
+    ],
+    "revenueStats": {
+      "todayRevenue": 8500,
+      "weeklyRevenue": [
+        { "day": "Mon", "revenue": 12000 },
+        { "day": "Tue", "revenue": 9500 }
+      ],
+      "pendingPayments": [
+        { "memberId": "...", "memberName": "Bob Wilson", "amount": 2500, "dueDate": "...", "status": "overdue" }
+      ]
+    },
+    "todayClasses": [
+      { "classId": "...", "name": "Morning Yoga", "time": "07:00", "duration": 60, "trainer": "Sarah Lee", "enrolled": 12, "capacity": 15, "status": "ongoing" }
+    ],
+    "trainerStats": [
+      { "trainerId": "...", "trainerName": "Alex Brown", "sessionsCompleted": 48, "activeMembers": 12, "rating": 0, "workloadStatus": "normal" }
+    ]
+  }
+}
+```
+
+`todayActivity.type`: `check_in` | `payment_received` | `new_member` | `class_booking`
+`memberInsights.type`: `churn_risk` | `attendance_drop` | `top_active`
+`trainerStats.workloadStatus`: `normal` | `high` | `overloaded`
+`todayClasses.status`: `upcoming` | `ongoing` | `completed`
+`revenueStats.pendingPayments.status`: `overdue` | `pending`
+
+> **Backward compatible alias:** `GET /gyms/:gymId/analytics/dashboard` still works.
+
+---
+
+### GET `/gyms/:gymId/analytics/trainer-dashboard/:trainerId` 🔒 `trainer | gym_admin | super_admin`
+Trainer's personal dashboard — assigned members, today's schedule, missed workouts, and member progress.
+
+**Response:**
+```json
+{
+  "data": {
+    "kpis": {
+      "assignedMembers": 12,
+      "todaySessionsCompleted": 3,
+      "todaySessionsUpcoming": 2,
+      "pendingAssignments": 4
+    },
+    "missedWorkouts": [
+      { "memberId": "...", "memberName": "Tom Hardy", "label": "Missed workouts this week", "severity": "high", "value": "1" }
+    ],
+    "pendingSessions": [
+      { "memberId": "...", "memberName": "Morning Yoga", "label": "Session not started – overdue", "severity": "medium", "value": "2026-03-25" }
+    ],
+    "unassignedPlans": [
+      { "memberId": "...", "memberName": "Raj Patel", "label": "No workout plan assigned", "severity": "low", "value": null }
+    ],
+    "todaySchedule": [
+      { "sessionId": "...", "memberId": "...", "memberName": "Morning Yoga", "time": "09:00", "duration": 60, "type": "general", "status": "completed" }
+    ],
+    "myMembers": [
+      { "memberId": "...", "memberName": "Jane Smith", "avatar": "", "planAssigned": true, "progressStatus": "on_track", "attendanceRate": 85, "lastCheckIn": "2026-03-25T09:00:00.000Z" }
+    ],
+    "memberProgress": [
+      { "memberId": "...", "memberName": "Jane Smith", "weightChange": 0, "strengthImprovement": 0, "weeklyAttendance": 4 }
+    ]
+  }
+}
+```
+
+`todaySchedule.status`: `completed` | `upcoming` | `in_progress`
+`myMembers.progressStatus`: `on_track` | `at_risk` | `excellent`
+
+> **Note:** `assignedMembers` = unique members with an active workout plan assigned by this trainer.
+
+---
+
+### GET `/gyms/:gymId/analytics/staff-dashboard` 🔒 `staff | gym_admin | super_admin`
+Front-desk dashboard — today's check-ins, alerts, available classes, and pending payments.
+
+**Response:**
+```json
+{
+  "data": {
+    "kpis": {
+      "todayCheckIns": 45,
+      "newMembersToday": 3,
+      "activeMembersPresent": 28,
+      "pendingPaymentsCount": 12
+    },
+    "alerts": [
+      { "alertId": "...", "type": "membership_expiry", "message": "Jane Smith's membership expires in 1 day", "severity": "high", "memberId": "...", "memberName": "Jane Smith" },
+      { "alertId": "...", "type": "payment_pending", "message": "Bob Wilson has an overdue payment of ₹2500", "severity": "high", "memberId": "...", "memberName": "Bob Wilson" }
+    ],
+    "recentCheckIns": [
+      { "checkInId": "...", "memberId": "...", "memberName": "Jane Smith", "avatar": "", "time": "09:15:00", "status": "checked_in" }
+    ],
+    "availableClasses": [
+      { "classId": "...", "name": "Morning Yoga", "time": "10:00", "trainer": "Sarah Lee", "spotsLeft": 3, "capacity": 15, "status": "upcoming" }
+    ],
+    "pendingPayments": [
+      { "paymentId": "...", "memberId": "...", "memberName": "Bob Wilson", "amount": 2500, "dueDate": "...", "status": "overdue" }
+    ],
+    "activityFeed": [
+      { "id": "...", "type": "check_in", "description": "Jane Smith checked in", "timestamp": "...", "memberName": "Jane Smith" }
+    ]
+  }
+}
+```
+
+`alerts.type`: `membership_expiry` | `payment_pending`
+`activityFeed.type`: `check_in` | `payment_received` | `new_member` | `class_booking`
+
+---
+
+### GET `/gyms/:gymId/analytics/revenue` 🔒 `gym_admin`
+
+**Query Params:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `from` | ISO date string | 3 months ago | Start of period |
+| `to` | ISO date string | today | End of period |
+| `groupBy` | `day` \| `month` | `month` | Grouping granularity |
+
+**Response:**
+```json
+{
+  "data": {
+    "summary": {
+      "totalRevenue": 325000,
+      "avgMonthlyRevenue": 108333,
+      "growth": 12.5
+    },
+    "chart": [
+      { "label": "Jan 2026", "revenue": 98000 },
+      { "label": "Feb 2026", "revenue": 112000 },
+      { "label": "Mar 2026", "revenue": 115000 }
+    ]
+  }
+}
+```
+
+> `chart[].label` format: `"MMM YYYY"` when `groupBy=month`, `"YYYY-MM-DD"` when `groupBy=day`.
+> `growth` is percentage change vs. the equivalent prior period.
+
+---
+
+### GET `/gyms/:gymId/analytics/members` 🔒 `gym_admin`
+
+**Query Params:** `from` (ISO date, default 3 months ago), `to` (ISO date, default today)
+
+**Response:**
+```json
+{
+  "data": {
+    "totalMembers": 320,
+    "activeMembers": 298,
+    "newMembersThisMonth": 32,
+    "churnRate": 3.2,
+    "attendanceByDay": [
+      { "day": "Sun", "count": 40 },
+      { "day": "Mon", "count": 85 },
+      { "day": "Tue", "count": 72 },
+      { "day": "Wed", "count": 78 },
+      { "day": "Thu", "count": 68 },
+      { "day": "Fri", "count": 90 },
+      { "day": "Sat", "count": 110 }
+    ],
+    "membershipDistribution": [
+      { "planName": "Monthly Premium", "count": 180 },
+      { "planName": "Quarterly", "count": 95 },
+      { "planName": "Annual", "count": 45 }
+    ]
   }
 }
 ```
 
 ---
 
-### GET `/gyms/:gymId/analytics/revenue` 🔒 `gym_admin`
-**Query Params:** `from`, `to`, `groupBy` (`day` | `month`)
-
-**Response:** Time-series revenue data.
-
----
-
-### GET `/gyms/:gymId/analytics/members` 🔒 `gym_admin`
-Member growth, retention, and demographic breakdowns.
-
----
-
 ### GET `/analytics/platform` 🔒 `super_admin`
-Platform-wide metrics: total gyms, total members, total MRR.
+Legacy endpoint. Returns raw totals (totalGyms, activeGyms, totalMembers, mrr, gymGrowth).
+Use `GET /analytics/super-admin/dashboard` for the full dashboard shape.
 
 ---
 
 ### GET `/me/analytics/progress` 🔒 `member`
 Member's personal progress analytics: weight trend, workout consistency, BMI change over time.
+
+**Response:**
+```json
+{
+  "data": {
+    "bodyMetrics": [
+      { "date": "...", "weightKg": 72, "bmi": 23.4, "bodyFatPct": 18 }
+    ],
+    "workoutPlans": [
+      { "_id": "...", "title": "6-Week Fat Loss", "status": "active", "createdAt": "...", "isAiGenerated": false }
+    ],
+    "attendance": {
+      "weeklyBreakdown": [{ "_id": { "week": 12, "year": 2026 }, "visits": 4 }],
+      "totalLast90Days": 48,
+      "avgVisitsPerWeek": 3.7
+    },
+    "subscriptionHistory": []
+  }
+}
+```
 
 ---
 
@@ -1174,9 +1453,7 @@ All list endpoints support:
 
 ---
 
-## What the Frontend Needs to Provide / Known Gaps
-
-The following are **not yet implemented in the backend** and will need either backend work or frontend-side handling:
+## Known Gaps / Not Yet Implemented
 
 | Gap | Notes |
 |-----|-------|
@@ -1190,3 +1467,5 @@ The following are **not yet implemented in the backend** and will need either ba
 | Social login (Google, etc.) | Not implemented. |
 | Multi-currency billing | Only INR is fully tested. |
 | Trainer/staff invite flow | Trainers/staff are created via API — no email invite link yet. |
+| AI usage tracking | `aiUsageCount` in super admin dashboard KPIs is always `0` — no AI usage model exists yet. |
+| Trainer dashboard sessions | `todaySchedule` is derived from GymClass records, not 1-on-1 personal training sessions. |
