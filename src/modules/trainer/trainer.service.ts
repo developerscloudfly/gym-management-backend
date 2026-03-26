@@ -85,6 +85,16 @@ const deactivateGymUser = async (
   if (!user) throw ApiError.notFound(`${role.charAt(0).toUpperCase() + role.slice(1)} not found`);
 };
 
+const getGymUserById = async (gymId: string, userId: string, role: 'trainer' | 'staff') => {
+  const user = await User.findOne({
+    _id: userId,
+    gymId: new mongoose.Types.ObjectId(gymId),
+    role,
+  }).select('-password -refreshToken');
+  if (!user) throw ApiError.notFound(`${role.charAt(0).toUpperCase() + role.slice(1)} not found`);
+  return user;
+};
+
 // ─── Trainer specific exports ─────────────────────────────────────────────────
 
 export const createTrainer = (
@@ -95,6 +105,9 @@ export const createTrainer = (
 
 export const getTrainers = (gymId: string, req: Request) =>
   getGymUsers(gymId, 'trainer', req);
+
+export const getTrainerById = (gymId: string, trainerId: string) =>
+  getGymUserById(gymId, trainerId, 'trainer');
 
 export const updateTrainer = (
   gymId: string,
@@ -119,6 +132,9 @@ export const createStaff = (
 
 export const getStaff = (gymId: string, req: Request) =>
   getGymUsers(gymId, 'staff', req);
+
+export const getStaffById = (gymId: string, staffId: string) =>
+  getGymUserById(gymId, staffId, 'staff');
 
 export const updateStaff = (
   gymId: string,

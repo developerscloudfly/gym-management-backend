@@ -18,6 +18,11 @@ export const getTrainers = asyncHandler(async (req: Request, res: Response): Pro
   sendResponse({ res, message: 'Trainers fetched', data: users, meta });
 });
 
+export const getTrainer = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const trainer = await trainerService.getTrainerById(p(req.params.gymId), p(req.params.id));
+  sendResponse({ res, message: 'Trainer fetched', data: trainer });
+});
+
 export const updateTrainer = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const trainer = await trainerService.updateTrainer(
     p(req.params.gymId),
@@ -45,6 +50,11 @@ export const createStaff = asyncHandler(async (req: Request, res: Response): Pro
 export const getStaff = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const { users, meta } = await trainerService.getStaff(p(req.params.gymId), req);
   sendResponse({ res, message: 'Staff fetched', data: users, meta });
+});
+
+export const getSingleStaff = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const staff = await trainerService.getStaffById(p(req.params.gymId), p(req.params.id));
+  sendResponse({ res, message: 'Staff fetched', data: staff });
 });
 
 export const updateStaff = asyncHandler(async (req: Request, res: Response): Promise<void> => {
