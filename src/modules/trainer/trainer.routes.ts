@@ -7,7 +7,10 @@ import { createTrainerSchema, updateTrainerSchema } from './trainer.validation';
 
 const router = Router({ mergeParams: true });
 
-router.use(authenticate, belongsToGym, authorize('gym_admin'));
+// Scope auth middleware to only /trainers and /staff paths
+// Using router.use(path) avoids bleeding into /analytics/* routes mounted on the same gymId prefix
+router.use('/trainers', authenticate, belongsToGym, authorize('gym_admin'));
+router.use('/staff', authenticate, belongsToGym, authorize('gym_admin'));
 
 /**
  * @swagger

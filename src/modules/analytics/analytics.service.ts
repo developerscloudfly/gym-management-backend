@@ -7,6 +7,8 @@ import { Attendance } from '../attendance/attendance.model';
 import { MemberProfile } from '../member/memberProfile.model';
 import { WorkoutPlan } from '../workout/workout.model';
 import { GymClass } from '../class/class.model';
+import { Notification } from '../notification/notification.model';
+import { DietPlan } from '../diet/diet.model';
 
 const monthLabel = (year: number, month: number) => {
   const d = new Date(year, month - 1, 1);
@@ -1080,6 +1082,93 @@ export const getMemberAnalytics = async (gymId: string, from: Date, to: Date) =>
       planName: d.planName as string,
       count: d.count as number,
     })),
+  };
+};
+
+// ─── Member Dashboard ─────────────────────────────────────────────────────────
+
+export const getMemberDashboard = async (memberId: string, gymId: string) => {
+  const memberObjId = new Types.ObjectId(memberId);
+  const gymObjId = new Types.ObjectId(gymId);
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const [
+    activeSubscription,
+    recentAttendance,
+    activeWorkoutPlan,
+    activeDietPlan,
+    upcomingClasses,
+    recentNotifications,
+    memberProfile,
+  ] = await Promise.all([
+    MemberSubscription.findOne({ memberId: memberObjId, gymId: gymObjId, status: 'active' })
+      .populate('planId', 'name price duration features')
+      .sort({ startDate: -1 }),
+    Attendance.find({ memberId: memberObjId, gymId: gymObjId, isActive: true })
+      .sort({ checkInTime: -1 })
+      .limit(10)
+      .select('checkInTime checkOutTime'),
+    WorkoutPlan.findOne({ memberId: memberObjId, gymId: gymObjId, status: 'active' })
+      .sort({ createdAt: -1 })
+      .select('title exercises isAiGenerated createdAt'),
+    DietPlan.findOne({ memberId: memberObjId, gymId: gymObjId, status: 'active' })
+      .sort({ createdAt: -1 })
+      .select('title totalCalories isAiGenerated createdAt'),
+    GymClass.find({
+      gymId: gymObjId,
+      enrolledMembers: memberObjId,
+      scheduledAt: { $gte: now },
+      status: { $in: ['scheduled', 'active'] },
+    })
+      .sort({ scheduledAt: 1 })
+      .limit(5)
+      .select('title scheduledAt durationMinutes capacity enrolledMembers status'),
+    Notification.find({ userId: memberObjId })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('title body type isRead createdAt'),
+    MemberProfile.findOne({ userId: memberObjId, gymId: gymObjId }).select(
+      'height weightKg bodyFatPct goal fitnessLevel'
+    ),
+  ]);
+
+  const checkInsThisMonth = await Attendance.countDocuments({
+    memberId: memberObjId,
+    gymId: gymObjId,
+    isActive: true,
+    checkInTime: { $gte: new Date(now.getFullYear(), now.getMonth(), 1) },
+  });
+
+  const checkInsLast30Days = await Attendance.countDocuments({
+    memberId: memberObjId,
+    gymId: gymObjId,
+    isActive: true,
+    checkInTime: { $gte: thirtyDaysAgo },
+  });
+
+  const daysUntilExpiry = activeSubscription?.endDate
+    ? Math.ceil(
+        (new Date(activeSubscription.endDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+      )
+    : null;
+
+  return {
+    kpis: {
+      checkInsThisMonth,
+      checkInsLast30Days,
+      daysUntilExpiry,
+      hasActiveSubscription: !!activeSubscription,
+      upcomingClassesCount: upcomingClasses.length,
+      unreadNotifications: recentNotifications.filter((n) => !n.isRead).length,
+    },
+    subscription: activeSubscription,
+    recentAttendance,
+    activeWorkoutPlan,
+    activeDietPlan,
+    upcomingClasses,
+    recentNotifications,
+    profile: memberProfile,
   };
 };
 

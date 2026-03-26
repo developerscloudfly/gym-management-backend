@@ -315,6 +315,39 @@ meRouter.use(authenticate);
 
 /**
  * @swagger
+ * /me/analytics/dashboard:
+ *   get:
+ *     summary: Member dashboard
+ *     tags: [Me]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Member dashboard with KPIs, active subscription, recent attendance, workout plan, diet plan, upcoming classes, and notifications
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         kpis:
+ *                           type: object
+ *                           properties:
+ *                             checkInsThisMonth: { type: integer }
+ *                             checkInsLast30Days: { type: integer }
+ *                             daysUntilExpiry: { type: integer, nullable: true }
+ *                             hasActiveSubscription: { type: boolean }
+ *                             upcomingClassesCount: { type: integer }
+ *                             unreadNotifications: { type: integer }
+ */
+meRouter.get('/dashboard', analyticsController.getMemberDashboard);
+
+/**
+ * @swagger
  * /me/analytics/progress:
  *   get:
  *     summary: Member personal progress analytics

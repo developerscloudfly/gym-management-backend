@@ -59,6 +59,13 @@ export const getMemberAnalytics = asyncHandler(async (req: Request, res: Respons
   sendResponse({ res, statusCode: 200, message: 'Member analytics retrieved', data });
 });
 
+export const getMemberDashboard = asyncHandler(async (req: Request, res: Response) => {
+  const memberId = req.user!._id.toString();
+  const gymId = req.user!.gymId?.toString() ?? '';
+  const data = await analyticsService.getMemberDashboard(memberId, gymId);
+  sendResponse({ res, statusCode: 200, message: 'Member dashboard retrieved', data });
+});
+
 export const getMyProgressAnalytics = asyncHandler(async (req: Request, res: Response) => {
   const memberId = req.user!._id.toString();
   const gymId = req.user!.gymId?.toString() ?? '';

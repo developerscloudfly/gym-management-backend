@@ -8,7 +8,9 @@
     "build": "tsc --project tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "seed:superadmin": "ts-node -r tsconfig-paths/register src/scripts/seedSuperAdmin.ts"
+    "seed:superadmin": "ts-node -r tsconfig-paths/register src/scripts/seedSuperAdmin.ts",
+    "seed:dummy": "ts-node -r tsconfig-paths/register src/scripts/seedDummyData.ts",
+    "seed:vishnu": "ts-node -r tsconfig-paths/register src/scripts/seedVishnu.ts"
   },
   "keywords": [],
   "author": "",
