@@ -866,7 +866,19 @@ Record a check-in.
 ---
 
 ### GET `/gyms/:gymId/attendance/member/:memberId/summary` 🔒 `gym_admin | staff | trainer`
-Returns attendance count, streak, last visit, etc.
+Returns streak and visit stats for a member.
+
+**Response 200:**
+```json
+{
+  "data": {
+    "currentStreak": 5,
+    "longestStreak": 14,
+    "totalVisits": 87,
+    "lastVisit": "2026-03-29T07:15:00.000Z"
+  }
+}
+```
 
 ---
 
@@ -1178,49 +1190,52 @@ Full gym dashboard — KPIs, action items, today's activity, revenue stats, clas
       "classesToday": 8
     },
     "expiringMemberships": [
-      { "memberId": "...", "memberName": "Jane Smith", "label": "Expires in 2 days", "severity": "high", "value": "2026-03-28", "phone": "+91..." }
+      { "memberId": "...", "memberName": "Jane Smith", "email": "jane@example.com", "detail": "Expires in 2 days", "daysLeft": 2, "avatarInitials": "JS" }
     ],
     "failedPayments": [
-      { "memberId": "...", "memberName": "Bob Wilson", "label": "₹2500 payment failed", "severity": "high", "value": "2500", "phone": "+91..." }
+      { "memberId": "...", "memberName": "Bob Wilson", "email": "bob@example.com", "detail": "₹2500 payment failed" }
     ],
     "inactiveMembers": [
-      { "memberId": "...", "memberName": "Alice Johnson", "label": "No check-in for 14+ days", "severity": "medium", "value": "14", "phone": "+91..." }
+      { "memberId": "...", "memberName": "Alice Johnson", "email": "alice@example.com", "detail": "No check-in for 14+ days" }
     ],
     "overloadedTrainers": [
-      { "trainerId": "...", "trainerName": "Alex Brown", "label": "16/15 members (over capacity)", "severity": "high", "value": "16" }
+      { "memberId": "...", "memberName": "Alex Brown", "email": "", "detail": "16/15 members (over capacity)" }
     ],
     "todayActivity": [
-      { "id": "...", "type": "check_in", "description": "Jane Smith checked in", "timestamp": "...", "memberName": "Jane Smith", "amount": null },
-      { "id": "...", "type": "payment_received", "description": "Monthly fee paid by Bob Wilson", "timestamp": "...", "memberName": "Bob Wilson", "amount": 2500 }
+      { "_id": "...", "type": "check_in", "memberName": "Jane Smith", "message": "Jane Smith checked in", "timestamp": "2026-03-30T07:05:00.000Z" },
+      { "_id": "...", "type": "payment_received", "memberName": "Bob Wilson", "message": "Monthly fee paid by Bob Wilson", "timestamp": "2026-03-30T08:00:00.000Z" }
     ],
     "memberInsights": [
-      { "memberId": "...", "memberName": "Alice Johnson", "type": "churn_risk", "insight": "No gym visit in 14+ days. High churn probability.", "severity": "high", "actionRequired": true }
+      { "memberId": "...", "memberName": "Alice Johnson", "type": "churn_risk", "insight": "No gym visit in 14+ days. High churn probability.", "severity": "high", "lastSeen": null }
     ],
     "revenueStats": {
-      "todayRevenue": 8500,
+      "today": 8500,
+      "pendingPayments": 5,
+      "failedTransactions": 3,
       "weeklyRevenue": [
         { "day": "Mon", "revenue": 12000 },
         { "day": "Tue", "revenue": 9500 }
       ],
-      "pendingPayments": [
-        { "memberId": "...", "memberName": "Bob Wilson", "amount": 2500, "dueDate": "...", "status": "overdue" }
+      "pendingList": [
+        { "memberId": "...", "memberName": "Bob Wilson", "amount": 2500, "dueDate": "2026-03-15T00:00:00.000Z" }
       ]
     },
     "todayClasses": [
-      { "classId": "...", "name": "Morning Yoga", "time": "07:00", "duration": 60, "trainer": "Sarah Lee", "enrolled": 12, "capacity": 15, "status": "ongoing" }
+      { "classId": "...", "name": "Morning Yoga", "trainerName": "Sarah Lee", "startTime": "2026-03-30T07:00:00.000Z", "endTime": "2026-03-30T08:00:00.000Z", "enrolled": 12, "capacity": 15, "status": "ongoing", "location": "Studio A" }
     ],
     "trainerStats": [
-      { "trainerId": "...", "trainerName": "Alex Brown", "sessionsCompleted": 48, "activeMembers": 12, "rating": 0, "workloadStatus": "normal" }
+      { "trainerId": "...", "trainerName": "Alex Brown", "sessionsCompleted": 48, "activeMembers": 12, "rating": 0, "avatarInitials": "AB", "workloadStatus": "normal" }
     ]
   }
 }
 ```
 
-`todayActivity.type`: `check_in` | `payment_received` | `new_member` | `class_booking`
-`memberInsights.type`: `churn_risk` | `attendance_drop` | `top_active`
-`trainerStats.workloadStatus`: `normal` | `high` | `overloaded`
-`todayClasses.status`: `upcoming` | `ongoing` | `completed`
-`revenueStats.pendingPayments.status`: `overdue` | `pending`
+| Field | Notes |
+|-------|-------|
+| `todayActivity.type` | `check_in` \| `payment_received` |
+| `memberInsights.type` | `churn_risk` \| `attendance_drop` \| `top_active` |
+| `trainerStats.workloadStatus` | `normal` \| `high` \| `overloaded` |
+| `todayClasses.status` | `upcoming` \| `ongoing` \| `completed` \| `cancelled` |
 
 > **Backward compatible alias:** `GET /gyms/:gymId/analytics/dashboard` still works.
 
@@ -1235,36 +1250,39 @@ Trainer's personal dashboard — assigned members, today's schedule, missed work
   "data": {
     "kpis": {
       "assignedMembers": 12,
-      "todaySessionsCompleted": 3,
-      "todaySessionsUpcoming": 2,
+      "sessionsToday": 5,
+      "completedSessions": 3,
       "pendingAssignments": 4
     },
     "missedWorkouts": [
-      { "memberId": "...", "memberName": "Tom Hardy", "label": "Missed workouts this week", "severity": "high", "value": "1" }
+      { "memberId": "...", "memberName": "Tom Hardy", "detail": "Missed workouts this week" }
     ],
     "pendingSessions": [
-      { "memberId": "...", "memberName": "Morning Yoga", "label": "Session not started – overdue", "severity": "medium", "value": "2026-03-25" }
+      { "memberId": "...", "memberName": "Morning Yoga", "detail": "Session not started – overdue" }
     ],
     "unassignedPlans": [
-      { "memberId": "...", "memberName": "Raj Patel", "label": "No workout plan assigned", "severity": "low", "value": null }
+      { "memberId": "...", "memberName": "Raj Patel", "detail": "No workout plan assigned" }
     ],
     "todaySchedule": [
-      { "sessionId": "...", "memberId": "...", "memberName": "Morning Yoga", "time": "09:00", "duration": 60, "type": "general", "status": "completed" }
+      { "sessionId": "...", "memberName": "Morning Yoga", "time": "2026-03-30T09:00:00.000Z", "endTime": "2026-03-30T10:00:00.000Z", "type": "general", "status": "completed", "location": "Studio A" }
     ],
     "myMembers": [
-      { "memberId": "...", "memberName": "Jane Smith", "avatar": "", "planAssigned": true, "progressStatus": "on_track", "attendanceRate": 85, "lastCheckIn": "2026-03-25T09:00:00.000Z" }
+      { "memberId": "...", "memberName": "Jane Smith", "progressStatus": "on_track", "lastActivity": "2026-03-29T09:00:00.000Z", "goal": "weight_loss", "workoutPlanAssigned": true, "dietPlanAssigned": false, "attendanceRate": 0.85 }
     ],
     "memberProgress": [
-      { "memberId": "...", "memberName": "Jane Smith", "weightChange": 0, "strengthImprovement": 0, "weeklyAttendance": 4 }
+      { "memberId": "...", "memberName": "Jane Smith", "weightChange": 0, "strengthImprovement": 0, "attendanceRate": 0.85, "weeklyAttendance": [{ "week": "Last 30d", "sessions": 17 }] }
     ]
   }
 }
 ```
 
-`todaySchedule.status`: `completed` | `upcoming` | `in_progress`
-`myMembers.progressStatus`: `on_track` | `at_risk` | `excellent`
+| Field | Notes |
+|-------|-------|
+| `todaySchedule.status` | `completed` \| `upcoming` \| `ongoing` \| `missed` |
+| `myMembers.progressStatus` | `on_track` \| `needs_attention` \| `excellent` |
+| `myMembers.attendanceRate` | `0.0`–`1.0` (fraction of expected sessions attended in last 30d) |
 
-> **Note:** `assignedMembers` = unique members with an active workout plan assigned by this trainer.
+> **Note:** `assignedMembers` = unique members with an active workout plan assigned by this trainer. `todaySchedule` is derived from GymClass records, not 1-on-1 personal training sessions.
 
 ---
 
@@ -1282,27 +1300,32 @@ Front-desk dashboard — today's check-ins, alerts, available classes, and pendi
       "pendingPaymentsCount": 12
     },
     "alerts": [
-      { "alertId": "...", "type": "membership_expiry", "message": "Jane Smith's membership expires in 1 day", "severity": "high", "memberId": "...", "memberName": "Jane Smith" },
-      { "alertId": "...", "type": "payment_pending", "message": "Bob Wilson has an overdue payment of ₹2500", "severity": "high", "memberId": "...", "memberName": "Bob Wilson" }
+      { "memberId": "...", "memberName": "Jane Smith", "alertType": "expired_membership", "detail": "Membership expires in 1 day", "daysOverdue": 0 },
+      { "memberId": "...", "memberName": "Bob Wilson", "alertType": "payment_pending", "detail": "Overdue payment of ₹2500", "daysOverdue": 5 }
     ],
     "recentCheckIns": [
-      { "checkInId": "...", "memberId": "...", "memberName": "Jane Smith", "avatar": "", "time": "09:15:00", "status": "checked_in" }
+      { "memberId": "...", "memberName": "Jane Smith", "membershipStatus": "active", "checkedInAt": "2026-03-30T09:15:00.000Z", "planName": "Monthly Premium" }
     ],
     "availableClasses": [
-      { "classId": "...", "name": "Morning Yoga", "time": "10:00", "trainer": "Sarah Lee", "spotsLeft": 3, "capacity": 15, "status": "upcoming" }
+      { "classId": "...", "name": "Morning Yoga", "trainerName": "Sarah Lee", "time": "2026-03-30T10:00:00.000Z", "availableSlots": 3, "totalCapacity": 15 }
     ],
     "pendingPayments": [
-      { "paymentId": "...", "memberId": "...", "memberName": "Bob Wilson", "amount": 2500, "dueDate": "...", "status": "overdue" }
+      { "paymentId": "...", "memberName": "Bob Wilson", "amount": 2500, "planName": "Monthly Premium", "dueDate": "2026-03-25T00:00:00.000Z", "status": "overdue" }
     ],
     "activityFeed": [
-      { "id": "...", "type": "check_in", "description": "Jane Smith checked in", "timestamp": "...", "memberName": "Jane Smith" }
+      { "_id": "...", "type": "check_in", "memberName": "Jane Smith", "message": "Jane Smith checked in", "timestamp": "2026-03-30T09:15:00.000Z" },
+      { "_id": "...", "type": "registration", "memberName": "Raj Patel", "message": "Raj Patel joined as new member", "timestamp": "2026-03-30T09:00:00.000Z" }
     ]
   }
 }
 ```
 
-`alerts.type`: `membership_expiry` | `payment_pending`
-`activityFeed.type`: `check_in` | `payment_received` | `new_member` | `class_booking`
+| Field | Notes |
+|-------|-------|
+| `alerts.alertType` | `expired_membership` \| `payment_pending` |
+| `recentCheckIns.membershipStatus` | `active` \| `expired` \| `expiring_soon` (≤7 days) \| `cancelled` \| `frozen` |
+| `activityFeed.type` | `check_in` \| `registration` |
+| `pendingPayments.status` | `pending` \| `overdue` |
 
 ---
 
@@ -1374,6 +1397,58 @@ Front-desk dashboard — today's check-ins, alerts, available classes, and pendi
 ### GET `/analytics/platform` 🔒 `super_admin`
 Legacy endpoint. Returns raw totals (totalGyms, activeGyms, totalMembers, mrr, gymGrowth).
 Use `GET /analytics/super-admin/dashboard` for the full dashboard shape.
+
+---
+
+### GET `/me/analytics/dashboard` 🔒 Any authenticated user (auto-scoped to logged-in member)
+Member's personal dashboard — subscription status, attendance streak, upcoming classes, active plans, and recent activity. No `gymId` needed — scoped from the auth token.
+
+**Response:**
+```json
+{
+  "data": {
+    "subscription": {
+      "planName": "Monthly Premium",
+      "status": "active",
+      "startDate": "2026-03-01T00:00:00.000Z",
+      "endDate": "2026-03-31T00:00:00.000Z",
+      "daysLeft": 1,
+      "autoRenew": false
+    },
+    "attendance": {
+      "totalCheckIns": 87,
+      "thisMonthCheckIns": 18,
+      "currentStreak": 5,
+      "longestStreak": 14,
+      "weeklyAttendance": [
+        { "day": "Sun", "count": 1 },
+        { "day": "Mon", "count": 4 },
+        { "day": "Tue", "count": 3 },
+        { "day": "Wed", "count": 4 },
+        { "day": "Thu", "count": 3 },
+        { "day": "Fri", "count": 4 },
+        { "day": "Sat", "count": 2 }
+      ]
+    },
+    "upcomingClasses": [
+      { "classId": "...", "name": "HIIT Blast", "trainerName": "Mike Johnson", "startTime": "2026-03-31T07:00:00.000Z", "endTime": "2026-03-31T08:00:00.000Z", "location": "Studio A", "status": "scheduled" }
+    ],
+    "workoutPlan": { "planId": "...", "title": "6-Week Fat Loss", "status": "active", "startDate": "2026-03-01T00:00:00.000Z" },
+    "dietPlan": { "planId": "...", "title": "2000kcal Cut", "status": "active", "startDate": "2026-03-01T00:00:00.000Z" },
+    "recentActivity": [
+      { "_id": "...", "type": "check_in", "message": "You checked in at the gym", "timestamp": "2026-03-30T07:05:00.000Z" },
+      { "_id": "...", "type": "payment", "message": "Payment of ₹2499 completed", "timestamp": "2026-03-01T10:00:00.000Z" }
+    ]
+  }
+}
+```
+
+| Field | Notes |
+|-------|-------|
+| `subscription` | `null` if no active subscription |
+| `workoutPlan` / `dietPlan` | `null` if none assigned |
+| `recentActivity.type` | `check_in` \| `payment` |
+| `attendance.weeklyAttendance` | Check-ins per day of week over the last 30 days |
 
 ---
 
@@ -1468,4 +1543,5 @@ All list endpoints support:
 | Multi-currency billing | Only INR is fully tested. |
 | Trainer/staff invite flow | Trainers/staff are created via API — no email invite link yet. |
 | AI usage tracking | `aiUsageCount` in super admin dashboard KPIs is always `0` — no AI usage model exists yet. |
-| Trainer dashboard sessions | `todaySchedule` is derived from GymClass records, not 1-on-1 personal training sessions. |
+| Trainer 1-on-1 sessions | `todaySchedule` in the trainer dashboard is derived from GymClass records, not personal training sessions. A dedicated session model would be needed for that. |
+| Member dashboard class_booking activity | `recentActivity` in member dashboard only includes `check_in` and `payment` types. Class booking events are not yet tracked as activity records. |
