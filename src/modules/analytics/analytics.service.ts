@@ -7,7 +7,6 @@ import { Attendance } from '../attendance/attendance.model';
 import { MemberProfile } from '../member/memberProfile.model';
 import { WorkoutPlan } from '../workout/workout.model';
 import { GymClass } from '../class/class.model';
-import { Notification } from '../notification/notification.model';
 import { DietPlan } from '../diet/diet.model';
 
 const monthLabel = (year: number, month: number) => {
@@ -348,11 +347,11 @@ export const getGymAdminDashboard = async (gymId: string) => {
       status: 'active',
       endDate: { $gte: now, $lte: sevenDaysLater },
     })
-      .populate('memberId', 'firstName lastName phone')
+      .populate('memberId', 'firstName lastName email phone')
       .sort({ endDate: 1 })
       .limit(10),
     Payment.find({ gymId: gymObjId, status: 'failed' })
-      .populate('memberId', 'firstName lastName phone')
+      .populate('memberId', 'firstName lastName email phone')
       .sort({ createdAt: -1 })
       .limit(10),
     Attendance.find({
@@ -417,7 +416,7 @@ export const getGymAdminDashboard = async (gymId: string) => {
   const inactiveMemberIds = activeSubMemberIds
     .filter((id) => !recentSet.has(id.toString()))
     .slice(0, 10);
-  const inactiveMembers = await User.find({ _id: { $in: inactiveMemberIds } }).select('firstName lastName phone');
+  const inactiveMembers = await User.find({ _id: { $in: inactiveMemberIds } }).select('firstName lastName email phone');
 
   // Trainer workload
   const trainerWorkloadData = await WorkoutPlan.aggregate([
@@ -469,6 +468,9 @@ export const getGymAdminDashboard = async (gymId: string) => {
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 20);
 
+  const initials = (first: string, last: string) =>
+    `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
+
   return {
     kpis: {
       activeMembers,
@@ -483,16 +485,16 @@ export const getGymAdminDashboard = async (gymId: string) => {
         _id: Types.ObjectId;
         firstName: string;
         lastName: string;
-        phone: string;
+        email: string;
       };
       const daysLeft = Math.ceil((s.endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
       return {
         memberId: m._id.toString(),
         memberName: `${m.firstName} ${m.lastName}`,
-        label: `Expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`,
-        severity: daysLeft <= 2 ? 'high' : daysLeft <= 5 ? 'medium' : ('low' as const),
-        value: s.endDate.toISOString(),
-        phone: m.phone ?? '',
+        email: m.email ?? '',
+        detail: `Expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`,
+        daysLeft,
+        avatarInitials: initials(m.firstName, m.lastName),
       };
     }),
     failedPayments: failedPaymentData.map((p) => {
@@ -500,50 +502,53 @@ export const getGymAdminDashboard = async (gymId: string) => {
         _id: Types.ObjectId;
         firstName: string;
         lastName: string;
-        phone: string;
+        email: string;
       };
       return {
         memberId: m._id.toString(),
         memberName: `${m.firstName} ${m.lastName}`,
-        label: `₹${p.amount} payment failed`,
-        severity: 'high' as const,
-        value: p.amount.toString(),
-        phone: m.phone ?? '',
+        email: m.email ?? '',
+        detail: `₹${p.amount} payment failed`,
       };
     }),
     inactiveMembers: inactiveMembers.map((m) => ({
       memberId: m._id.toString(),
       memberName: `${m.firstName} ${m.lastName}`,
-      label: 'No check-in for 14+ days',
-      severity: 'medium' as const,
-      value: '14',
-      phone: (m as unknown as { phone?: string }).phone ?? '',
+      email: (m as unknown as { email?: string }).email ?? '',
+      detail: 'No check-in for 14+ days',
     })),
     overloadedTrainers: trainerData
       .filter((t) => (trainerWorkloadMap.get(t._id.toString()) ?? 0) > MAX_TRAINER_CAPACITY)
       .map((t) => {
         const count = trainerWorkloadMap.get(t._id.toString()) ?? 0;
         return {
-          trainerId: t._id.toString(),
-          trainerName: `${t.firstName} ${t.lastName}`,
-          label: `${count}/${MAX_TRAINER_CAPACITY} members (over capacity)`,
-          severity: 'high' as const,
-          value: count.toString(),
+          memberId: t._id.toString(),
+          memberName: `${t.firstName} ${t.lastName}`,
+          email: '',
+          detail: `${count}/${MAX_TRAINER_CAPACITY} members (over capacity)`,
         };
       }),
-    todayActivity,
+    todayActivity: todayActivity.map((a) => ({
+      _id: a.id,
+      type: a.type,
+      memberName: a.memberName,
+      message: a.description,
+      timestamp: a.timestamp,
+    })),
     memberInsights: inactiveMembers.slice(0, 5).map((m) => ({
       memberId: m._id.toString(),
       memberName: `${m.firstName} ${m.lastName}`,
       type: 'churn_risk' as const,
       insight: 'No gym visit in 14+ days. High churn probability.',
       severity: 'high' as const,
-      actionRequired: true,
+      lastSeen: null,
     })),
     revenueStats: {
-      todayRevenue: (dailyRevenueData[0]?.total as number) ?? 0,
+      today: (dailyRevenueData[0]?.total as number) ?? 0,
+      pendingPayments: pendingPaymentsData.filter((p) => p.status === 'pending').length,
+      failedTransactions: pendingPaymentsData.filter((p) => p.status === 'failed').length,
       weeklyRevenue,
-      pendingPayments: pendingPaymentsData.map((p) => {
+      pendingList: pendingPaymentsData.map((p) => {
         const m = p.memberId as unknown as {
           _id: Types.ObjectId;
           firstName: string;
@@ -554,25 +559,26 @@ export const getGymAdminDashboard = async (gymId: string) => {
           memberName: `${m.firstName} ${m.lastName}`,
           amount: p.amount,
           dueDate: (p as unknown as { createdAt: Date }).createdAt,
-          status: p.status === 'failed' ? 'overdue' : 'pending',
         };
       }),
     },
     todayClasses: todayClassRecords.map((c) => {
-      const trainer = c.trainerId as unknown as { firstName: string; lastName: string };
-      let status: 'upcoming' | 'ongoing' | 'completed' = 'upcoming';
-      if (c.status === 'completed') status = 'completed';
+      const trainer = c.trainerId as unknown as { firstName: string; lastName: string } | null;
+      let status: 'upcoming' | 'ongoing' | 'completed' | 'cancelled' = 'upcoming';
+      if (c.status === 'cancelled') status = 'cancelled';
+      else if (c.status === 'completed') status = 'completed';
       else if (c.startTime <= now && c.endTime >= now) status = 'ongoing';
       else if (c.endTime < now) status = 'completed';
       return {
         classId: c._id.toString(),
         name: c.name,
-        time: c.startTime.toTimeString().slice(0, 5),
-        duration: Math.round((c.endTime.getTime() - c.startTime.getTime()) / 60000),
-        trainer: trainer ? `${trainer.firstName} ${trainer.lastName}` : 'Unknown',
+        trainerName: trainer ? `${trainer.firstName} ${trainer.lastName}` : 'Unknown',
+        startTime: c.startTime.toISOString(),
+        endTime: c.endTime.toISOString(),
         enrolled: c.enrolledCount,
         capacity: c.capacity,
         status,
+        location: c.location ?? null,
       };
     }),
     trainerStats: trainerData.map((t) => {
@@ -587,6 +593,7 @@ export const getGymAdminDashboard = async (gymId: string) => {
         sessionsCompleted: sessions,
         activeMembers: activeCount,
         rating: 0,
+        avatarInitials: initials(t.firstName, t.lastName),
         workloadStatus,
       };
     }),
@@ -622,6 +629,8 @@ export const getTrainerDashboard = async (gymId: string, trainerId: string) => {
     lastCheckIns,
     attendanceCounts,
     assignedMemberDocs,
+    memberProfiles,
+    activeDietPlans,
   ] = await Promise.all([
     GymClass.find({
       gymId: gymObjId,
@@ -653,6 +662,8 @@ export const getTrainerDashboard = async (gymId: string, trainerId: string) => {
       { $group: { _id: '$memberId', count: { $sum: 1 } } },
     ]),
     User.find({ _id: { $in: assignedMemberObjIds } }).select('_id firstName lastName'),
+    MemberProfile.find({ userId: { $in: assignedMemberObjIds }, gymId: gymObjId }).select('userId fitnessGoal'),
+    DietPlan.find({ memberId: { $in: assignedMemberObjIds }, gymId: gymObjId, status: 'active' }).select('memberId'),
   ]);
 
   const membersWithPlan = new Set(assignedMemberIds);
@@ -673,53 +684,55 @@ export const getTrainerDashboard = async (gymId: string, trainerId: string) => {
     attendanceCounts.map((a) => [a._id.toString(), a.count as number])
   );
 
-  const todaySessionsCompleted = todayClasses.filter((c) => c.status === 'completed').length;
-  const todaySessionsUpcoming = todayClasses.filter(
-    (c) => c.status === 'scheduled' || c.status === 'ongoing'
-  ).length;
+  const sessionsToday = todayClasses.length;
+  const completedSessions = todayClasses.filter((c) => c.status === 'completed').length;
+
+  const profileGoalMap = new Map(
+    memberProfiles.map((p) => [
+      (p.userId as Types.ObjectId).toString(),
+      p.fitnessGoal as string | undefined,
+    ])
+  );
+  const dietPlanMemberSet = new Set(
+    activeDietPlans.map((d) => (d.memberId as Types.ObjectId).toString())
+  );
 
   return {
     kpis: {
       assignedMembers: assignedMemberIds.length,
-      todaySessionsCompleted,
-      todaySessionsUpcoming,
+      sessionsToday,
+      completedSessions,
       pendingAssignments: unassignedPlanMembers.length,
     },
     missedWorkouts: missedMemberDocs.map((m) => ({
       memberId: m._id.toString(),
       memberName: `${m.firstName} ${m.lastName}`,
-      label: 'Missed workouts this week',
-      severity: 'high' as const,
-      value: '1',
+      detail: 'Missed workouts this week',
     })),
     pendingSessions: todayClasses
       .filter((c) => c.status === 'scheduled' && c.startTime < now)
       .map((c) => ({
         memberId: c._id.toString(),
         memberName: c.name,
-        label: 'Session not started – overdue',
-        severity: 'medium' as const,
-        value: c.startTime.toISOString().split('T')[0],
+        detail: 'Session not started – overdue',
       })),
     unassignedPlans: unassignedPlanMembers.map((m) => ({
       memberId: m._id.toString(),
       memberName: `${m.firstName} ${m.lastName}`,
-      label: 'No workout plan assigned',
-      severity: 'low' as const,
-      value: null,
+      detail: 'No workout plan assigned',
     })),
     todaySchedule: todayClasses.map((c) => {
-      let status: 'completed' | 'upcoming' | 'in_progress' = 'upcoming';
+      let status: 'completed' | 'upcoming' | 'ongoing' | 'missed' = 'upcoming';
       if (c.status === 'completed') status = 'completed';
-      else if (c.status === 'ongoing') status = 'in_progress';
+      else if (c.status === 'ongoing') status = 'ongoing';
       return {
         sessionId: c._id.toString(),
-        memberId: c._id.toString(),
         memberName: c.name,
-        time: c.startTime.toTimeString().slice(0, 5),
-        duration: Math.round((c.endTime.getTime() - c.startTime.getTime()) / 60000),
+        time: c.startTime.toISOString(),
+        endTime: c.endTime.toISOString(),
         type: c.category ?? 'general',
         status,
+        location: c.location ?? null,
       };
     }),
     myMembers: assignedMemberDocs.map((m) => {
@@ -729,23 +742,28 @@ export const getTrainerDashboard = async (gymId: string, trainerId: string) => {
       return {
         memberId: m._id.toString(),
         memberName: `${m.firstName} ${m.lastName}`,
-        avatar: '',
-        planAssigned: true,
-        progressStatus: (rate >= 80 ? 'excellent' : rate >= 50 ? 'on_track' : 'at_risk') as
+        progressStatus: (rate >= 80 ? 'excellent' : rate >= 50 ? 'on_track' : 'needs_attention') as
           | 'on_track'
-          | 'at_risk'
+          | 'needs_attention'
           | 'excellent',
-        attendanceRate: rate,
-        lastCheckIn: lastIn ?? null,
+        lastActivity: lastIn?.toISOString() ?? null,
+        goal: profileGoalMap.get(m._id.toString()) ?? null,
+        workoutPlanAssigned: true,
+        dietPlanAssigned: dietPlanMemberSet.has(m._id.toString()),
+        attendanceRate: rate / 100,
       };
     }),
-    memberProgress: assignedMemberDocs.map((m) => ({
-      memberId: m._id.toString(),
-      memberName: `${m.firstName} ${m.lastName}`,
-      weightChange: 0,
-      strengthImprovement: 0,
-      weeklyAttendance: attendanceCountMap.get(m._id.toString()) ?? 0,
-    })),
+    memberProgress: assignedMemberDocs.map((m) => {
+      const visits30d = attendanceCountMap.get(m._id.toString()) ?? 0;
+      return {
+        memberId: m._id.toString(),
+        memberName: `${m.firstName} ${m.lastName}`,
+        weightChange: 0,
+        strengthImprovement: 0,
+        attendanceRate: Math.min(1, visits30d / 20),
+        weeklyAttendance: [{ week: 'Last 30d', sessions: visits30d }],
+      };
+    }),
   };
 };
 
@@ -829,6 +847,56 @@ export const getStaffDashboard = async (gymId: string) => {
       .limit(5),
   ]);
 
+  // Lookup subscriptions for recent check-in members (membershipStatus + planName)
+  const checkInMemberIds = [
+    ...new Set(
+      recentCheckInRecords.map((a) => {
+        const m = a.memberId as unknown as { _id: Types.ObjectId };
+        return m._id.toString();
+      })
+    ),
+  ].map((id) => new Types.ObjectId(id));
+
+  const memberSubscriptionMap = new Map<
+    string,
+    { status: string; planName: string }
+  >();
+  if (checkInMemberIds.length > 0) {
+    const subs = await MemberSubscription.find({
+      memberId: { $in: checkInMemberIds },
+      gymId: gymObjId,
+    })
+      .sort({ endDate: -1 })
+      .populate('planId', 'name');
+
+    for (const sub of subs) {
+      const mId = (sub.memberId as Types.ObjectId).toString();
+      if (!memberSubscriptionMap.has(mId)) {
+        const plan = sub.planId as unknown as { name: string } | null;
+        let membershipStatus: string = sub.status;
+        const daysLeft = Math.ceil((sub.endDate.getTime() - now.getTime()) / 86400000);
+        if (sub.status === 'active' && daysLeft <= 7) membershipStatus = 'expiring_soon';
+        memberSubscriptionMap.set(mId, { status: membershipStatus, planName: plan?.name ?? '' });
+      }
+    }
+  }
+
+  // Lookup plan names for pending payments
+  const pendingSubIds = pendingPayments
+    .map((p) => p.subscriptionId)
+    .filter(Boolean) as Types.ObjectId[];
+  const pendingSubMap = new Map<string, string>();
+  if (pendingSubIds.length > 0) {
+    const pSubs = await MemberSubscription.find({ _id: { $in: pendingSubIds } }).populate(
+      'planId',
+      'name'
+    );
+    for (const sub of pSubs) {
+      const plan = sub.planId as unknown as { name: string } | null;
+      pendingSubMap.set(sub._id.toString(), plan?.name ?? '');
+    }
+  }
+
   const alerts = [
     ...expiringMemberships.map((s) => {
       const m = s.memberId as unknown as {
@@ -838,12 +906,11 @@ export const getStaffDashboard = async (gymId: string) => {
       };
       const daysLeft = Math.ceil((s.endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
       return {
-        alertId: s._id.toString(),
-        type: 'membership_expiry' as const,
-        message: `${m.firstName} ${m.lastName}'s membership expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`,
-        severity: daysLeft <= 1 ? 'high' : 'medium',
         memberId: m._id.toString(),
         memberName: `${m.firstName} ${m.lastName}`,
+        alertType: 'expired_membership' as const,
+        detail: `Membership expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`,
+        daysOverdue: 0,
       };
     }),
     ...failedPayments.map((p) => {
@@ -852,13 +919,15 @@ export const getStaffDashboard = async (gymId: string) => {
         firstName: string;
         lastName: string;
       };
+      const daysAgo = Math.floor(
+        (now.getTime() - (p as unknown as { createdAt: Date }).createdAt.getTime()) / 86400000
+      );
       return {
-        alertId: p._id.toString(),
-        type: 'payment_pending' as const,
-        message: `${m.firstName} ${m.lastName} has an overdue payment of ₹${p.amount}`,
-        severity: 'high',
         memberId: m._id.toString(),
         memberName: `${m.firstName} ${m.lastName}`,
+        alertType: 'payment_pending' as const,
+        detail: `Overdue payment of ₹${p.amount}`,
+        daysOverdue: daysAgo,
       };
     }),
   ];
@@ -867,19 +936,19 @@ export const getStaffDashboard = async (gymId: string) => {
     ...recentCheckInRecords.slice(0, 5).map((a) => {
       const m = a.memberId as unknown as { firstName: string; lastName: string };
       return {
-        id: a._id.toString(),
+        _id: a._id.toString(),
         type: 'check_in' as const,
-        description: `${m.firstName} ${m.lastName} checked in`,
-        timestamp: a.checkInTime,
         memberName: `${m.firstName} ${m.lastName}`,
+        message: `${m.firstName} ${m.lastName} checked in`,
+        timestamp: a.checkInTime,
       };
     }),
     ...todayNewMemberDocs.map((m) => ({
-      id: m._id.toString(),
-      type: 'new_member' as const,
-      description: `${m.firstName} ${m.lastName} joined as new member`,
-      timestamp: now,
+      _id: m._id.toString(),
+      type: 'registration' as const,
       memberName: `${m.firstName} ${m.lastName}`,
+      message: `${m.firstName} ${m.lastName} joined as new member`,
+      timestamp: now,
     })),
   ]
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
@@ -899,25 +968,24 @@ export const getStaffDashboard = async (gymId: string) => {
         firstName: string;
         lastName: string;
       };
+      const sub = memberSubscriptionMap.get(m._id.toString());
       return {
-        checkInId: a._id.toString(),
         memberId: m._id.toString(),
         memberName: `${m.firstName} ${m.lastName}`,
-        avatar: '',
-        time: a.checkInTime.toTimeString().slice(0, 8),
-        status: 'checked_in',
+        membershipStatus: sub?.status ?? 'unknown',
+        checkedInAt: a.checkInTime.toISOString(),
+        planName: sub?.planName ?? '',
       };
     }),
     availableClasses: upcomingClasses.map((c) => {
-      const trainer = c.trainerId as unknown as { firstName: string; lastName: string };
+      const trainer = c.trainerId as unknown as { firstName: string; lastName: string } | null;
       return {
         classId: c._id.toString(),
         name: c.name,
-        time: c.startTime.toTimeString().slice(0, 5),
-        trainer: trainer ? `${trainer.firstName} ${trainer.lastName}` : 'Unknown',
-        spotsLeft: c.capacity - c.enrolledCount,
-        capacity: c.capacity,
-        status: c.status === 'ongoing' ? 'ongoing' : 'upcoming',
+        trainerName: trainer ? `${trainer.firstName} ${trainer.lastName}` : 'Unknown',
+        time: c.startTime.toISOString(),
+        availableSlots: c.capacity - c.enrolledCount,
+        totalCapacity: c.capacity,
       };
     }),
     pendingPayments: pendingPayments.map((p) => {
@@ -928,11 +996,11 @@ export const getStaffDashboard = async (gymId: string) => {
       };
       return {
         paymentId: p._id.toString(),
-        memberId: m._id.toString(),
         memberName: `${m.firstName} ${m.lastName}`,
         amount: p.amount,
+        planName: p.subscriptionId ? (pendingSubMap.get(p.subscriptionId.toString()) ?? '') : '',
         dueDate: (p as unknown as { createdAt: Date }).createdAt,
-        status: p.status === 'failed' ? 'overdue' : 'pending',
+        status: p.status === 'failed' ? ('overdue' as const) : ('pending' as const),
       };
     }),
     activityFeed,
@@ -1091,84 +1159,184 @@ export const getMemberDashboard = async (memberId: string, gymId: string) => {
   const memberObjId = new Types.ObjectId(memberId);
   const gymObjId = new Types.ObjectId(gymId);
   const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
   const [
     activeSubscription,
-    recentAttendance,
+    totalCheckIns,
+    thisMonthCheckIns,
+    allAttendanceDates,
+    weeklyAttendanceData,
+    upcomingClassesRaw,
     activeWorkoutPlan,
     activeDietPlan,
-    upcomingClasses,
-    recentNotifications,
-    memberProfile,
+    recentPayments,
+    recentAttendanceRaw,
   ] = await Promise.all([
     MemberSubscription.findOne({ memberId: memberObjId, gymId: gymObjId, status: 'active' })
-      .populate('planId', 'name price duration features')
+      .populate('planId', 'name price')
       .sort({ startDate: -1 }),
+    Attendance.countDocuments({ memberId: memberObjId, gymId: gymObjId, isActive: true }),
+    Attendance.countDocuments({
+      memberId: memberObjId,
+      gymId: gymObjId,
+      isActive: true,
+      checkInTime: { $gte: startOfMonth },
+    }),
     Attendance.find({ memberId: memberObjId, gymId: gymObjId, isActive: true })
-      .sort({ checkInTime: -1 })
-      .limit(10)
-      .select('checkInTime checkOutTime'),
-    WorkoutPlan.findOne({ memberId: memberObjId, gymId: gymObjId, status: 'active' })
-      .sort({ createdAt: -1 })
-      .select('title exercises isAiGenerated createdAt'),
-    DietPlan.findOne({ memberId: memberObjId, gymId: gymObjId, status: 'active' })
-      .sort({ createdAt: -1 })
-      .select('title totalCalories isAiGenerated createdAt'),
+      .select('checkInTime')
+      .sort({ checkInTime: 1 }),
+    Attendance.aggregate([
+      {
+        $match: {
+          memberId: memberObjId,
+          gymId: gymObjId,
+          isActive: true,
+          checkInTime: { $gte: thirtyDaysAgo },
+        },
+      },
+      { $group: { _id: { $dayOfWeek: '$checkInTime' }, count: { $sum: 1 } } },
+    ]),
     GymClass.find({
       gymId: gymObjId,
       enrolledMembers: memberObjId,
-      scheduledAt: { $gte: now },
-      status: { $in: ['scheduled', 'active'] },
+      startTime: { $gte: now },
+      status: { $in: ['scheduled', 'ongoing'] },
     })
-      .sort({ scheduledAt: 1 })
-      .limit(5)
-      .select('title scheduledAt durationMinutes capacity enrolledMembers status'),
-    Notification.find({ userId: memberObjId })
+      .populate('trainerId', 'firstName lastName')
+      .sort({ startTime: 1 })
+      .limit(5),
+    WorkoutPlan.findOne({ memberId: memberObjId, gymId: gymObjId, status: 'active' })
       .sort({ createdAt: -1 })
+      .select('_id title status startDate'),
+    DietPlan.findOne({ memberId: memberObjId, gymId: gymObjId, status: 'active' })
+      .sort({ createdAt: -1 })
+      .select('_id title status startDate'),
+    Payment.find({ memberId: memberObjId, gymId: gymObjId, status: 'completed' })
+      .sort({ paidAt: -1 })
       .limit(5)
-      .select('title body type isRead createdAt'),
-    MemberProfile.findOne({ userId: memberObjId, gymId: gymObjId }).select(
-      'height weightKg bodyFatPct goal fitnessLevel'
-    ),
+      .select('_id amount paidAt'),
+    Attendance.find({ memberId: memberObjId, gymId: gymObjId, isActive: true })
+      .sort({ checkInTime: -1 })
+      .limit(5)
+      .select('_id checkInTime'),
   ]);
 
-  const checkInsThisMonth = await Attendance.countDocuments({
-    memberId: memberObjId,
-    gymId: gymObjId,
-    isActive: true,
-    checkInTime: { $gte: new Date(now.getFullYear(), now.getMonth(), 1) },
-  });
+  // Streak calculation
+  const dates = [
+    ...new Set(allAttendanceDates.map((a) => a.checkInTime.toISOString().slice(0, 10))),
+  ].sort();
+  let streak = 0;
+  let longestStreak = 0;
+  let currentStreak = 0;
+  let prevDate: string | null = null;
+  for (const date of dates) {
+    if (prevDate === null) { streak = 1; }
+    else {
+      const diff = (new Date(date).getTime() - new Date(prevDate).getTime()) / 86400000;
+      streak = diff === 1 ? streak + 1 : 1;
+    }
+    if (streak > longestStreak) longestStreak = streak;
+    prevDate = date;
+  }
+  if (dates.length > 0) {
+    const lastDate = dates[dates.length - 1];
+    const today = now.toISOString().slice(0, 10);
+    const yesterday = new Date(now.getTime() - 86400000).toISOString().slice(0, 10);
+    currentStreak = lastDate === today || lastDate === yesterday ? streak : 0;
+  }
 
-  const checkInsLast30Days = await Attendance.countDocuments({
-    memberId: memberObjId,
-    gymId: gymObjId,
-    isActive: true,
-    checkInTime: { $gte: thirtyDaysAgo },
-  });
+  // Weekly attendance by day name
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const weeklyMap = new Map(weeklyAttendanceData.map((d) => [d._id as number, d.count as number]));
+  const weeklyAttendance = dayNames.map((day, idx) => ({
+    day,
+    count: weeklyMap.get(idx + 1) ?? 0,
+  }));
 
-  const daysUntilExpiry = activeSubscription?.endDate
-    ? Math.ceil(
-        (new Date(activeSubscription.endDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-      )
+  // Subscription shape
+  const plan = activeSubscription?.planId as unknown as { name: string } | null;
+  const subscription = activeSubscription
+    ? {
+        planName: plan?.name ?? '',
+        status: activeSubscription.status,
+        startDate: activeSubscription.startDate.toISOString(),
+        endDate: activeSubscription.endDate.toISOString(),
+        daysLeft: Math.max(
+          0,
+          Math.ceil((activeSubscription.endDate.getTime() - now.getTime()) / 86400000)
+        ),
+        autoRenew: activeSubscription.autoRenew,
+      }
     : null;
 
+  // Upcoming classes shape
+  const upcomingClasses = upcomingClassesRaw.map((c) => {
+    const trainer = c.trainerId as unknown as { firstName: string; lastName: string } | null;
+    return {
+      classId: c._id.toString(),
+      name: c.name,
+      trainerName: trainer ? `${trainer.firstName} ${trainer.lastName}` : 'Unknown',
+      startTime: c.startTime.toISOString(),
+      endTime: c.endTime.toISOString(),
+      location: c.location ?? null,
+      status: c.status,
+    };
+  });
+
+  // Workout & diet plan shape
+  const workoutPlan = activeWorkoutPlan
+    ? {
+        planId: activeWorkoutPlan._id.toString(),
+        title: activeWorkoutPlan.title,
+        status: activeWorkoutPlan.status,
+        startDate:
+          (activeWorkoutPlan as unknown as { startDate?: Date }).startDate?.toISOString() ?? null,
+      }
+    : null;
+
+  const dietPlan = activeDietPlan
+    ? {
+        planId: activeDietPlan._id.toString(),
+        title: activeDietPlan.title,
+        status: activeDietPlan.status,
+        startDate:
+          (activeDietPlan as unknown as { startDate?: Date }).startDate?.toISOString() ?? null,
+      }
+    : null;
+
+  // Recent activity
+  const recentActivity = [
+    ...recentAttendanceRaw.map((a) => ({
+      _id: a._id.toString(),
+      type: 'check_in' as const,
+      message: 'You checked in at the gym',
+      timestamp: a.checkInTime.toISOString(),
+    })),
+    ...recentPayments.map((p) => ({
+      _id: p._id.toString(),
+      type: 'payment' as const,
+      message: `Payment of ₹${p.amount} completed`,
+      timestamp: (p.paidAt ?? (p as unknown as { createdAt: Date }).createdAt).toISOString(),
+    })),
+  ]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 10);
+
   return {
-    kpis: {
-      checkInsThisMonth,
-      checkInsLast30Days,
-      daysUntilExpiry,
-      hasActiveSubscription: !!activeSubscription,
-      upcomingClassesCount: upcomingClasses.length,
-      unreadNotifications: recentNotifications.filter((n) => !n.isRead).length,
+    subscription,
+    attendance: {
+      totalCheckIns,
+      thisMonthCheckIns,
+      currentStreak,
+      longestStreak,
+      weeklyAttendance,
     },
-    subscription: activeSubscription,
-    recentAttendance,
-    activeWorkoutPlan,
-    activeDietPlan,
     upcomingClasses,
-    recentNotifications,
-    profile: memberProfile,
+    workoutPlan,
+    dietPlan,
+    recentActivity,
   };
 };
 

@@ -152,28 +152,42 @@ export const getGymAttendance = async (
 };
 
 export const getAttendanceSummary = async (gymId: string, memberId: string) => {
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const allRecords = await Attendance.find({
+    gymId: new Types.ObjectId(gymId),
+    memberId: new Types.ObjectId(memberId),
+    isActive: true,
+    status: { $ne: 'absent' },
+  })
+    .select('checkInTime')
+    .sort({ checkInTime: 1 });
 
-  const [total, last30Days, byType] = await Promise.all([
-    Attendance.countDocuments({ gymId: new Types.ObjectId(gymId), memberId: new Types.ObjectId(memberId), isActive: true }),
-    Attendance.countDocuments({
-      gymId: new Types.ObjectId(gymId),
-      memberId: new Types.ObjectId(memberId),
-      checkInTime: { $gte: thirtyDaysAgo },
-      isActive: true,
-    }),
-    Attendance.aggregate([
-      {
-        $match: {
-          gymId: new Types.ObjectId(gymId),
-          memberId: new Types.ObjectId(memberId),
-          isActive: true,
-        },
-      },
-      { $group: { _id: '$type', count: { $sum: 1 } } },
-    ]),
-  ]);
+  const totalVisits = allRecords.length;
+  const lastVisit = totalVisits > 0 ? allRecords[totalVisits - 1].checkInTime.toISOString() : null;
 
-  return { total, last30Days, byType };
+  // Unique visit dates (YYYY-MM-DD)
+  const dates = [...new Set(allRecords.map((a) => a.checkInTime.toISOString().slice(0, 10)))].sort();
+
+  let streak = 0;
+  let longestStreak = 0;
+  let prevDate: string | null = null;
+  for (const date of dates) {
+    if (prevDate === null) {
+      streak = 1;
+    } else {
+      const diff = (new Date(date).getTime() - new Date(prevDate).getTime()) / 86400000;
+      streak = diff === 1 ? streak + 1 : 1;
+    }
+    if (streak > longestStreak) longestStreak = streak;
+    prevDate = date;
+  }
+
+  let currentStreak = 0;
+  if (dates.length > 0) {
+    const lastDate = dates[dates.length - 1];
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    currentStreak = lastDate === today || lastDate === yesterday ? streak : 0;
+  }
+
+  return { currentStreak, longestStreak, totalVisits, lastVisit };
 };
